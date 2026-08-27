@@ -67,6 +67,8 @@ const MESSAGES: Record<string, string> = {
     "Нельзя сделать точку дочерней самой себе",
   "Cannot delete a location that has children, staff, items, sales or shifts":
     "Нельзя удалить точку, пока к ней привязаны сотрудники, товары, продажи или смены",
+  "Only an admin can change their sales location":
+    "Точку продаж может менять только администратор",
   "Shift not found": "Смена не найдена",
   "No open shift": "Нет открытой смены",
   "locationId is required to open a shift": "Чтобы открыть смену, нужна точка продаж",

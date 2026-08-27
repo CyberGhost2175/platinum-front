@@ -15,6 +15,7 @@ export type AuthUser = {
 export type MeUser = AuthUser & {
   firstName: string;
   lastName: string;
+  phone: string | null;
   totpEnabled: boolean;
   location?: Location | null;
 };

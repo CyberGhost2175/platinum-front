@@ -18,7 +18,8 @@ type AuthContextValue = {
   user: MeUser | null;
   applySession: (tokens: TokenPair) => Promise<MeUser>;
   logout: () => Promise<void>;
-  refreshUser: () => Promise<void>;
+  refreshUser: () => Promise<MeUser>;
+  patchUser: (patch: Partial<MeUser>) => void;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -41,6 +42,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const refreshUser = useCallback(async () => {
     const me = await api.auth.me();
     setUser(me);
+    return me;
+  }, []);
+
+  const patchUser = useCallback((patch: Partial<MeUser>) => {
+    setUser((current) => (current ? { ...current, ...patch } : current));
   }, []);
 
   const applySession = useCallback(async (tokens: TokenPair) => {
@@ -83,8 +89,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [refreshUser]);
 
   const value = useMemo(
-    () => ({ ready, user, applySession, logout, refreshUser }),
-    [ready, user, applySession, logout, refreshUser],
+    () => ({ ready, user, applySession, logout, refreshUser, patchUser }),
+    [ready, user, applySession, logout, refreshUser, patchUser],
   );
 
   return (

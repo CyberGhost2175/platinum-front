@@ -9,22 +9,25 @@ import { LocationSelect } from "@/components/location-select";
 import { PageLoading } from "@/components/notice";
 import { useToast } from "@/components/toast";
 import { api, errorMessage } from "@/lib/api";
-import { ROLE_LABEL } from "@/lib/labels";
+import { LOCATION_TYPE_LABEL, ROLE_LABEL } from "@/lib/labels";
 import type { Location, StaffUser, Supplier, UserRole } from "@/lib/types";
 
 const inputClass = "rounded border border-border bg-surface-lowest px-3 py-2 text-body text-on-surface";
 
 export function SettingsScreen() {
-  const [tab, setTab] = useState<"users" | "suppliers">("users");
+  const [tab, setTab] = useState<"users" | "suppliers" | "locations">("users");
 
   return (
     <AppShell title="Настройки" showSearch={false}>
       <div className="p-page space-y-6">
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <TabButton active={tab === "users"} onClick={() => setTab("users")}>Сотрудники</TabButton>
+          <TabButton active={tab === "locations"} onClick={() => setTab("locations")}>Точки</TabButton>
           <TabButton active={tab === "suppliers"} onClick={() => setTab("suppliers")}>Поставщики</TabButton>
         </div>
-        {tab === "users" ? <UsersPanel /> : <SuppliersPanel />}
+        {tab === "users" ? <UsersPanel /> : null}
+        {tab === "locations" ? <LocationsPanel /> : null}
+        {tab === "suppliers" ? <SuppliersPanel /> : null}
       </div>
     </AppShell>
   );
@@ -413,6 +416,201 @@ function SupplierCard({
         <option value="false">Неактивен</option>
       </select>
       <button type="submit" disabled={busy} className="rounded bg-gold px-4 py-2 label-caps text-on-primary disabled:opacity-50 md:col-span-4">
+        Сохранить
+      </button>
+    </form>
+  );
+}
+
+function LocationsPanel() {
+  const { user, patchUser } = useAuth();
+  const toast = useToast();
+  const [items, setItems] = useState<Location[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  async function load() {
+    setLoading(true);
+    try {
+      setItems(await api.locations.list());
+    } catch (err) {
+      toast.error(errorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  async function onCreate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const parentId = String(form.get("parentId") || "");
+    try {
+      await api.locations.create({
+        name: String(form.get("name")).trim(),
+        type: String(form.get("type")) as Location["type"],
+        parentId: parentId || undefined,
+      });
+      event.currentTarget.reset();
+      toast.success("Точка создана");
+      await load();
+    } catch (err) {
+      toast.error(errorMessage(err));
+    }
+  }
+
+  return (
+    <div className="space-y-8">
+      <form onSubmit={onCreate} className="grid gap-3 rounded-lg border border-border bg-surface p-6 md:grid-cols-3">
+        <h3 className="text-h2 md:col-span-3">Новая точка</h3>
+        <input name="name" required placeholder="Название, например ТЦ Евразия" className={inputClass} />
+        <select name="type" defaultValue="store" className={inputClass}>
+          {(Object.entries(LOCATION_TYPE_LABEL) as Array<[Location["type"], string]>).map(([id, label]) => (
+            <option key={id} value={id}>{label}</option>
+          ))}
+        </select>
+        <select name="parentId" defaultValue="" className={inputClass}>
+          <option value="">Без родителя</option>
+          {items.map((location) => (
+            <option key={location.id} value={location.id}>
+              {location.name} · {LOCATION_TYPE_LABEL[location.type]}
+            </option>
+          ))}
+        </select>
+        <button type="submit" className="rounded bg-gold px-4 py-2 label-caps text-on-primary md:col-span-3">
+          Создать
+        </button>
+      </form>
+      {loading ? <PageLoading /> : (
+        <div className="space-y-4">
+          <h3 className="text-h2">Точки продаж</h3>
+          {items.length === 0 ? (
+            <p className="text-body text-secondary">Пока нет точек. Создайте салон, чтобы он появился в шапке.</p>
+          ) : items.map((item) => (
+            <LocationCard
+              key={`${item.id}-${item.name}-${item.type}-${item.parentId ?? ""}`}
+              location={item}
+              locations={items}
+              isAssigned={user?.locationId === item.id}
+              onChanged={load}
+              onSaved={(updated) => {
+                if (user?.locationId === updated.id) {
+                  patchUser({ locationId: updated.id, location: updated });
+                }
+              }}
+              onAssignedRemoved={() => {
+                if (user?.locationId === item.id) {
+                  patchUser({ locationId: null, location: null });
+                }
+              }}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LocationCard({
+  location,
+  locations,
+  isAssigned,
+  onChanged,
+  onSaved,
+  onAssignedRemoved,
+}: {
+  location: Location;
+  locations: Location[];
+  isAssigned: boolean;
+  onChanged: () => Promise<void>;
+  onSaved: (location: Location) => void;
+  onAssignedRemoved: () => void;
+}) {
+  const toast = useToast();
+  const confirm = useConfirm();
+  const [busy, setBusy] = useState(false);
+  const parents = locations.filter((item) => item.id !== location.id);
+
+  async function onSave(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    setBusy(true);
+    try {
+      const updated = await api.locations.update(location.id, {
+        name: String(form.get("name")).trim(),
+        type: String(form.get("type")) as Location["type"],
+        parentId: String(form.get("parentId") || "") || null,
+      });
+      toast.success("Точка сохранена");
+      await onChanged();
+      onSaved(updated);
+    } catch (err) {
+      toast.error(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onDelete() {
+    const ok = await confirm({
+      title: "Удалить точку?",
+      description: isAssigned
+        ? `«${location.name}» назначена вам. Удалить можно только пустую точку без сотрудников и продаж.`
+        : `«${location.name}» будет удалена, если к ней не привязаны сотрудники, товары или продажи.`,
+      confirmLabel: "Удалить",
+      tone: "danger",
+      icon: "delete",
+    });
+    if (!ok) return;
+    setBusy(true);
+    try {
+      await api.locations.remove(location.id);
+      toast.success("Точка удалена");
+      onAssignedRemoved();
+      await onChanged();
+    } catch (err) {
+      toast.error(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form onSubmit={onSave} className="grid gap-3 rounded-lg border border-border bg-surface p-6 md:grid-cols-3">
+      <div className="md:col-span-3 flex items-center justify-between gap-3">
+        <div>
+          <div className="text-body">{location.name}</div>
+          <div className="text-[12px] text-secondary">
+            {LOCATION_TYPE_LABEL[location.type]}
+            {isAssigned ? " · ваша точка" : ""}
+          </div>
+        </div>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void onDelete()}
+          className="rounded border border-danger/40 px-3 py-2 text-[12px] text-danger disabled:opacity-50"
+        >
+          Удалить
+        </button>
+      </div>
+      <input name="name" required defaultValue={location.name} placeholder="Название" className={inputClass} />
+      <select name="type" defaultValue={location.type} className={inputClass}>
+        {(Object.entries(LOCATION_TYPE_LABEL) as Array<[Location["type"], string]>).map(([id, label]) => (
+          <option key={id} value={id}>{label}</option>
+        ))}
+      </select>
+      <select name="parentId" defaultValue={location.parentId ?? ""} className={inputClass}>
+        <option value="">Без родителя</option>
+        {parents.map((item) => (
+          <option key={item.id} value={item.id}>
+            {item.name} · {LOCATION_TYPE_LABEL[item.type]}
+          </option>
+        ))}
+      </select>
+      <button type="submit" disabled={busy} className="rounded bg-gold px-4 py-2 label-caps text-on-primary disabled:opacity-50 md:col-span-3">
         Сохранить
       </button>
     </form>

@@ -31,7 +31,11 @@ import type {
   UserRole,
 } from "./types";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
+const API_URL = process.env.NEXT_PUBLIC_API_URL;
+
+if (!API_URL) {
+  throw new Error("NEXT_PUBLIC_API_URL is not set. Copy .env.example to .env");
+}
 
 export class ApiError extends Error {
   status: number;
@@ -177,6 +181,13 @@ export const api = {
         auth: false,
       }),
     me: () => request<MeUser>("/api/auth/me"),
+    updateProfile: (body: {
+      firstName?: string;
+      lastName?: string;
+      email?: string;
+      phone?: string | null;
+      locationId?: string | null;
+    }) => request<MeUser>("/api/auth/me", { method: "PATCH", body }),
     history: () => request<AuthHistoryEvent[]>("/api/auth/history"),
     changePassword: (password: string) =>
       request<void>("/api/auth/password", {
@@ -273,12 +284,15 @@ export const api = {
   },
   locations: {
     list: () => request<Location[]>("/api/locations"),
+    get: (id: string) => request<Location>(`/api/locations/${id}`),
     create: (body: { name: string; type: Location["type"]; parentId?: string }) =>
       request<Location>("/api/locations", { method: "POST", body }),
     update: (
       id: string,
       body: { name?: string; type?: Location["type"]; parentId?: string | null },
     ) => request<Location>(`/api/locations/${id}`, { method: "PATCH", body }),
+    remove: (id: string) =>
+      request<void>(`/api/locations/${id}`, { method: "DELETE" }),
   },
   items: {
     list: (params: {

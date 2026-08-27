@@ -16,7 +16,7 @@ import type { AuthHistoryEvent, Location } from "@/lib/types";
 const fieldClass = "w-full rounded border border-border bg-surface-lowest px-3 py-2 text-body";
 
 export function AccountScreen() {
-  const { user, logout, refreshUser } = useAuth();
+  const { user, logout, patchUser } = useAuth();
   const router = useRouter();
   const confirm = useConfirm();
   const toast = useToast();
@@ -24,6 +24,10 @@ export function AccountScreen() {
   const [busy, setBusy] = useState(false);
   const [locations, setLocations] = useState<Location[]>([]);
   const [locationId, setLocationId] = useState(user?.locationId ?? "");
+  const [firstName, setFirstName] = useState(user?.firstName ?? "");
+  const [lastName, setLastName] = useState(user?.lastName ?? "");
+  const [email, setEmail] = useState(user?.email ?? "");
+  const [phone, setPhone] = useState(user?.phone ?? "");
   const [newLocationName, setNewLocationName] = useState("");
   const [events, setEvents] = useState<AuthHistoryEvent[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
@@ -37,7 +41,11 @@ export function AccountScreen() {
 
   useEffect(() => {
     setLocationId(user?.locationId ?? "");
-  }, [user?.locationId]);
+    setFirstName(user?.firstName ?? "");
+    setLastName(user?.lastName ?? "");
+    setEmail(user?.email ?? "");
+    setPhone(user?.phone ?? "");
+  }, [user?.locationId, user?.firstName, user?.lastName, user?.email, user?.phone]);
 
   useEffect(() => {
     let cancelled = false;
@@ -58,7 +66,6 @@ export function AccountScreen() {
   }, []);
 
   if (!user) return null;
-  const account = user;
 
   async function onChangePassword(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -94,13 +101,35 @@ export function AccountScreen() {
     }
   }
 
+  async function onSaveProfile(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const me = await api.auth.updateProfile({
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        email: email.trim(),
+        phone: phone.trim() || null,
+      });
+      patchUser(me);
+      toast.success("Профиль сохранён");
+    } catch (err) {
+      const message = errorMessage(err);
+      setError(message);
+      toast.error(message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function onSaveLocation(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
     setError(null);
     try {
-      await api.users.update(account.id, { locationId: locationId || null });
-      await refreshUser();
+      const me = await api.auth.updateProfile({ locationId: locationId || null });
+      patchUser(me);
       toast.success("Точка сохранена");
     } catch (err) {
       const message = errorMessage(err);
@@ -119,12 +148,12 @@ export function AccountScreen() {
     setError(null);
     try {
       const created = await api.locations.create({ name, type: "store" });
-      await api.users.update(account.id, { locationId: created.id });
+      const me = await api.auth.updateProfile({ locationId: created.id });
       setLocations((current) =>
         [...current, created].sort((a, b) => a.name.localeCompare(b.name, "ru")),
       );
       setNewLocationName("");
-      await refreshUser();
+      patchUser(me);
       toast.success(`Точка «${created.name}» назначена`);
     } catch (err) {
       const message = errorMessage(err);
@@ -140,17 +169,61 @@ export function AccountScreen() {
       <div className="p-page space-y-6">
         {error ? <Notice onClose={() => setError(null)}>{error}</Notice> : null}
 
-        <div className="max-w-xl rounded-lg border border-border bg-surface p-8">
-          <h2 className="mb-6 text-h2">Профиль</h2>
+        <form onSubmit={onSaveProfile} className="max-w-xl space-y-4 rounded-lg border border-border bg-surface p-8">
+          <h2 className="text-h2">Профиль</h2>
+          <div className="grid gap-3 md:grid-cols-2">
+            <label className="flex flex-col gap-1.5">
+              <span className="label-caps text-secondary">Имя</span>
+              <input
+                value={firstName}
+                onChange={(event) => setFirstName(event.target.value)}
+                required
+                className={fieldClass}
+              />
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="label-caps text-secondary">Фамилия</span>
+              <input
+                value={lastName}
+                onChange={(event) => setLastName(event.target.value)}
+                required
+                className={fieldClass}
+              />
+            </label>
+          </div>
+          <label className="flex flex-col gap-1.5">
+            <span className="label-caps text-secondary">Электронная почта</span>
+            <input
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              required
+              className={fieldClass}
+            />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="label-caps text-secondary">Телефон</span>
+            <input
+              value={phone}
+              onChange={(event) => setPhone(event.target.value)}
+              placeholder="+7…"
+              className={fieldClass}
+            />
+          </label>
           <dl className="space-y-4 text-body">
-            <Row label="Имя" value={`${user.firstName} ${user.lastName}`.trim()} />
-            <Row label="Электронная почта" value={user.email} />
             <Row label="Роль" value={ROLE_LABEL[user.role]} />
             {!isAdmin ? (
               <Row label="Точка" value={user.location?.name ?? "Не указана"} />
             ) : null}
           </dl>
-        </div>
+          <button
+            type="submit"
+            disabled={busy}
+            className="rounded bg-gold px-4 py-2 label-caps text-on-primary disabled:opacity-50"
+          >
+            Сохранить профиль
+          </button>
+        </form>
 
         {isAdmin ? (
           <div className="max-w-xl space-y-6 rounded-lg border border-border bg-surface p-8">
