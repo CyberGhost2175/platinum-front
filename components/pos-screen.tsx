@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AppShell } from "@/components/app-shell";
 import { useAuth, useShift } from "@/components/auth-provider";
 import { useConfirm } from "@/components/confirm-dialog";
@@ -8,7 +8,13 @@ import { Icon } from "@/components/icon";
 import { Notice } from "@/components/notice";
 import { useToast } from "@/components/toast";
 import { api, errorMessage } from "@/lib/api";
-import { formatKopecks, formatRubles } from "@/lib/format";
+import {
+  formatKopecks,
+  formatMinorAsTenge,
+  formatRubles,
+  parsePercent,
+  parseTengeToMinor,
+} from "@/lib/format";
 import { ITEM_CATEGORY_LABEL } from "@/lib/labels";
 import { can, SALE_CREATE_ROLES } from "@/lib/roles";
 import type { ItemCategory, PaymentMethod, ProductWithStock, Sale } from "@/lib/types";
@@ -19,6 +25,9 @@ const CATEGORIES: Array<{ id: "all" | ItemCategory; label: string }> = [
     ([id, label]) => ({ id, label }),
   ),
 ];
+
+const compactField =
+  "w-full rounded-sm border border-border bg-background px-2 py-1.5 text-right text-[13px] tabular text-on-surface outline-none placeholder:text-secondary focus:border-gold";
 
 export function PosScreen() {
   const { user } = useAuth();
@@ -36,6 +45,7 @@ export function PosScreen() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [focusLineId, setFocusLineId] = useState<string | null>(null);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebounced(query.trim()), 250);
@@ -116,27 +126,10 @@ export function PosScreen() {
       const draft = await ensureDraft();
       const next = await api.sales.addItem(draft.id, { productId: product.id, qty: 1 });
       setSale(next);
-      await loadProducts();
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function updateQty(lineId: string, delta: number) {
-    if (!sale) return;
-    const line = sale.items.find((item) => item.id === lineId);
-    if (!line) return;
-    const qty = line.qty + delta;
-    setBusy(true);
-    setError(null);
-    try {
-      const next =
-        qty <= 0
-          ? await api.sales.removeItem(sale.id, lineId)
-          : await api.sales.updateItem(sale.id, lineId, { qty });
-      setSale(next);
+      const newest = next.items[next.items.length - 1];
+      if (newest && Number(newest.price) === 0) {
+        setFocusLineId(newest.id);
+      }
       await loadProducts();
     } catch (err) {
       setError(errorMessage(err));
@@ -157,6 +150,32 @@ export function PosScreen() {
       setBusy(false);
     }
   }
+
+  const patchLinePrice = useCallback(
+    async (lineId: string, priceMinor: number) => {
+      if (!sale) return;
+      try {
+        setSale(await api.sales.updateItem(sale.id, lineId, { priceMinor }));
+        setError(null);
+      } catch (err) {
+        setError(errorMessage(err));
+      }
+    },
+    [sale],
+  );
+
+  const patchDiscount = useCallback(
+    async (body: { discountMinor?: number; discountPercent?: number }) => {
+      if (!sale) return;
+      try {
+        setSale(await api.sales.updateDraft(sale.id, body));
+        setError(null);
+      } catch (err) {
+        setError(errorMessage(err));
+      }
+    },
+    [sale],
+  );
 
   async function clearDraft() {
     if (!sale) return;
@@ -216,8 +235,8 @@ export function PosScreen() {
     (sum, line) => sum + Number(line.price) * line.qty,
     0,
   );
-  const discount = Number(sale?.discount ?? 0) + lines.reduce((sum, line) => sum + Number(line.discount), 0);
   const total = Number(sale?.totalAmount ?? 0);
+  const totalDiscount = Math.max(0, subtotal - total);
 
   return (
     <AppShell
@@ -305,7 +324,7 @@ export function PosScreen() {
           </div>
         </div>
 
-        <aside className="flex h-full w-full shrink-0 flex-col border-t border-border bg-surface shadow-[-4px_0_24px_rgba(0,0,0,0.02)] lg:w-[380px] lg:border-t-0 lg:border-l">
+        <aside className="flex h-full w-full shrink-0 flex-col border-t border-border bg-surface shadow-[-4px_0_24px_rgba(0,0,0,0.02)] lg:w-[400px] lg:border-t-0 lg:border-l">
           <div className="border-b border-border p-5">
             <div className="flex items-center justify-between">
               <h2 className="text-h2 text-on-surface">Текущий чек</h2>
@@ -332,47 +351,42 @@ export function PosScreen() {
                   key={line.id}
                   className="group border-b border-border p-3 transition-colors last:border-0 hover:bg-background"
                 >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1 pr-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1 pr-2">
                       <div className="mb-1 text-body leading-snug font-medium text-on-surface">
                         {line.product?.name ?? "Изделие"}
                       </div>
                       <div className="text-[11px] text-secondary">
-                        Арт: #{line.product?.sku ?? "—"}
-                        {line.discountPercent ? ` • Скидка: ${line.discountPercent}%` : ""}
+                        Арт: #{line.product?.sku ?? "—"} · {line.qty} шт
+                        {line.discountPercent ? ` · Скидка ${line.discountPercent}%` : ""}
                       </div>
-                    </div>
-                    <div className="text-right text-table font-medium tabular">
-                      {formatKopecks(line.lineTotal)}
-                    </div>
-                  </div>
-                  <div className="mt-3 flex items-center justify-between">
-                    <div className="flex items-center rounded-sm border border-border bg-surface">
-                      <button
-                        type="button"
-                        className="flex h-7 w-7 items-center justify-center text-secondary hover:text-gold"
-                        onClick={() => updateQty(line.id, -1)}
-                      >
-                        <Icon name="remove" size={16} />
-                      </button>
-                      <span className="flex h-7 w-8 items-center justify-center border-x border-border text-[13px] tabular">
-                        {line.qty}
-                      </span>
-                      <button
-                        type="button"
-                        className="flex h-7 w-7 items-center justify-center text-secondary hover:text-gold"
-                        onClick={() => updateQty(line.id, 1)}
-                      >
-                        <Icon name="add" size={16} />
-                      </button>
                     </div>
                     <button
                       type="button"
-                      className="text-secondary opacity-0 transition-all group-hover:opacity-100 hover:text-error"
+                      className="shrink-0 text-secondary opacity-0 transition-all group-hover:opacity-100 hover:text-error"
                       onClick={() => removeLine(line.id)}
+                      aria-label="Убрать из чека"
                     >
                       <Icon name="close" size={18} />
                     </button>
+                  </div>
+                  <div className="mt-3 flex items-end justify-between gap-3">
+                    <label className="flex min-w-0 flex-1 flex-col gap-1">
+                      <span className="label-caps text-secondary">Цена, тг</span>
+                      <DebouncedNumberField
+                        committed={Number(line.price)}
+                        parse={parseTengeToMinor}
+                        format={formatMinorAsTenge}
+                        onCommit={(priceMinor) => void patchLinePrice(line.id, priceMinor)}
+                        disabled={!canSell || busy}
+                        autoFocus={focusLineId === line.id}
+                        placeholder="0"
+                        className={compactField}
+                      />
+                    </label>
+                    <div className="pb-1.5 text-right text-table font-medium tabular">
+                      {formatKopecks(line.lineTotal)}
+                    </div>
                   </div>
                 </div>
               ))
@@ -380,6 +394,15 @@ export function PosScreen() {
           </div>
 
           <div className="border-t border-border bg-surface-lowest p-5">
+            {sale && lines.length > 0 ? (
+              <ReceiptDiscountEditor
+                key={sale.id}
+                percent={sale.discountPercent || 0}
+                amountMinor={Number(sale.discount || 0)}
+                disabled={!canSell || busy}
+                onApply={(body) => void patchDiscount(body)}
+              />
+            ) : null}
             <div className="mb-4 space-y-2">
               <div className="flex justify-between text-secondary">
                 <span className="text-body">Подытог ({count} шт.)</span>
@@ -387,7 +410,7 @@ export function PosScreen() {
               </div>
               <div className="flex justify-between text-gold">
                 <span className="text-body">Скидка</span>
-                <span className="text-table tabular">− {formatKopecks(discount)}</span>
+                <span className="text-table tabular">− {formatKopecks(totalDiscount)}</span>
               </div>
               <div className="mt-2 flex items-end justify-between border-t border-dashed border-border pt-2">
                 <span className="text-h2 font-medium text-on-surface">Итого к оплате</span>
@@ -435,5 +458,167 @@ export function PosScreen() {
         </aside>
       </div>
     </AppShell>
+  );
+}
+
+function formatPercentValue(value: number) {
+  return value ? String(value) : "";
+}
+
+function ReceiptDiscountEditor({
+  percent,
+  amountMinor,
+  disabled,
+  onApply,
+}: {
+  percent: number;
+  amountMinor: number;
+  disabled?: boolean;
+  onApply: (body: { discountMinor: number; discountPercent: number }) => void;
+}) {
+  const [percentText, setPercentText] = useState(() => formatPercentValue(percent));
+  const [amountText, setAmountText] = useState(() => formatMinorAsTenge(amountMinor));
+  const focused = useRef(false);
+  const skip = useRef(true);
+
+  useEffect(() => {
+    if (focused.current) return;
+    setPercentText(formatPercentValue(percent));
+    setAmountText(formatMinorAsTenge(amountMinor));
+  }, [percent, amountMinor]);
+
+  useEffect(() => {
+    if (skip.current) {
+      skip.current = false;
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      const discountPercent = parsePercent(percentText);
+      const discountMinor = parseTengeToMinor(amountText);
+      if (discountPercent === null || discountMinor === null) return;
+      if (discountPercent === percent && discountMinor === amountMinor) return;
+      onApply({ discountMinor, discountPercent });
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [percentText, amountText, percent, amountMinor, onApply]);
+
+  return (
+    <div className="mb-4 rounded-sm border border-border bg-surface p-3">
+      <p className="mb-2 label-caps text-secondary">Скидка на чек</p>
+      <div className="grid grid-cols-2 gap-2">
+        <label className="flex flex-col gap-1">
+          <span className="text-[11px] text-secondary">Процент</span>
+          <div className="relative">
+            <input
+              value={percentText}
+              disabled={disabled}
+              inputMode="numeric"
+              placeholder="0"
+              className={`${compactField} pr-7`}
+              onFocus={() => {
+                focused.current = true;
+              }}
+              onChange={(event) => setPercentText(event.target.value)}
+              onBlur={() => {
+                focused.current = false;
+                const parsed = parsePercent(percentText);
+                setPercentText(formatPercentValue(parsed ?? percent));
+              }}
+            />
+            <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-[12px] text-secondary">
+              %
+            </span>
+          </div>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-[11px] text-secondary">Сумма, тг</span>
+          <input
+            value={amountText}
+            disabled={disabled}
+            inputMode="decimal"
+            placeholder="0"
+            className={compactField}
+            onFocus={() => {
+              focused.current = true;
+            }}
+            onChange={(event) => setAmountText(event.target.value)}
+            onBlur={() => {
+              focused.current = false;
+              const parsed = parseTengeToMinor(amountText);
+              setAmountText(formatMinorAsTenge(parsed ?? amountMinor));
+            }}
+          />
+        </label>
+      </div>
+    </div>
+  );
+}
+
+function DebouncedNumberField({
+  committed,
+  parse,
+  format,
+  onCommit,
+  disabled,
+  autoFocus,
+  placeholder,
+  className,
+}: {
+  committed: number;
+  parse: (raw: string) => number | null;
+  format: (value: number) => string;
+  onCommit: (value: number) => void;
+  disabled?: boolean;
+  autoFocus?: boolean;
+  placeholder?: string;
+  className?: string;
+}) {
+  const [text, setText] = useState(() => format(committed));
+  const focused = useRef(false);
+  const lastSent = useRef(committed);
+
+  useEffect(() => {
+    if (focused.current) return;
+    lastSent.current = committed;
+    setText(format(committed));
+  }, [committed, format]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const parsed = parse(text);
+      if (parsed === null || parsed === lastSent.current) return;
+      lastSent.current = parsed;
+      onCommit(parsed);
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [text, parse, onCommit]);
+
+  return (
+    <input
+      value={text}
+      disabled={disabled}
+      autoFocus={autoFocus}
+      inputMode="decimal"
+      placeholder={placeholder}
+      className={className}
+      onFocus={() => {
+        focused.current = true;
+      }}
+      onChange={(event) => setText(event.target.value)}
+      onBlur={() => {
+        focused.current = false;
+        const parsed = parse(text);
+        if (parsed === null) {
+          setText(format(committed));
+          lastSent.current = committed;
+          return;
+        }
+        setText(format(parsed));
+        if (parsed !== lastSent.current) {
+          lastSent.current = parsed;
+          onCommit(parsed);
+        }
+      }}
+    />
   );
 }

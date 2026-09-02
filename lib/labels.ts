@@ -30,7 +30,7 @@ export const METAL_LABEL: Record<MetalCategory, string> = {
 };
 
 export const GOLD_TONE_LABEL: Record<GoldTone, string> = {
-  yellow: "Золотое",
+  yellow: "Желтое",
   white: "Белое",
   red: "Красное",
 };

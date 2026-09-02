@@ -110,6 +110,47 @@ export type ProductSearchResult = ProductWithStock & {
   score: number;
 };
 
+export type StockReportScope = "available" | "in_stock" | "on_display";
+
+export type StockReportBucket = {
+  key: string;
+  name: string;
+  grams: string;
+  units: number;
+  skuCount: number;
+  share: number;
+};
+
+export type StockReportProduct = {
+  productId: string;
+  sku: string;
+  name: string;
+  supplierName: string;
+  metalCategory: MetalCategory;
+  goldTone: GoldTone | null;
+  itemCategory: ItemCategory;
+  units: number;
+  grams: string;
+  weight: string;
+};
+
+export type StockReport = {
+  totals: {
+    grams: string;
+    units: number;
+    skuCount: number;
+    goldGrams: string;
+    silverGrams: string;
+    diamondsGrams: string;
+  };
+  byMetal: StockReportBucket[];
+  byGoldTone: StockReportBucket[];
+  bySupplier: StockReportBucket[];
+  byCategory: StockReportBucket[];
+  most: StockReportProduct[];
+  least: StockReportProduct[];
+};
+
 export type Location = {
   id: string;
   type: "warehouse" | "store" | "display";

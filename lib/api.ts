@@ -25,6 +25,8 @@ import type {
   Shift,
   ShiftState,
   StaffUser,
+  StockReport,
+  StockReportScope,
   StockStatus,
   Supplier,
   TokenPair,
@@ -239,6 +241,17 @@ export const api = {
     } = {}) =>
       request<Paginated<ProductWithStock>>(`/api/catalog/products${qs(params)}`),
     product: (id: string) => request<ProductWithStock>(`/api/catalog/products/${id}`),
+    stockReport: (params: {
+      itemCategory?: ItemCategory | "";
+      metalCategory?: MetalCategory | "";
+      goldTone?: string;
+      supplierId?: string;
+      locationId?: string;
+      scope?: StockReportScope;
+      stale?: boolean;
+      q?: string;
+      productLimit?: number;
+    } = {}) => request<StockReport>(`/api/catalog/stock-report${qs(params)}`),
   },
   products: {
     get: (id: string) => request<ProductWithStock>(`/api/products/${id}`),
@@ -250,8 +263,8 @@ export const api = {
       goldTone?: string | null;
       itemCategory: ItemCategory;
       supplierId: string;
-      price?: string;
-      costPrice?: string;
+      price?: string | null;
+      costPrice?: string | null;
     }) => request<ProductWithStock>("/api/products", { method: "POST", body }),
     update: (
       id: string,
@@ -342,9 +355,29 @@ export const api = {
         promoCode?: string;
       },
     ) => request<Sale>(`/api/sales/drafts/${id}`, { method: "PATCH", body }),
-    addItem: (id: string, body: { itemId?: string; productId?: string; qty?: number }) =>
-      request<Sale>(`/api/sales/drafts/${id}/items`, { method: "POST", body }),
-    updateItem: (id: string, lineId: string, body: { qty?: number }) =>
+    addItem: (
+      id: string,
+      body: {
+        itemId?: string;
+        productId?: string;
+        qty?: number;
+        priceMinor?: number;
+        discountMinor?: number;
+        discountPercent?: number;
+        promoCode?: string;
+      },
+    ) => request<Sale>(`/api/sales/drafts/${id}/items`, { method: "POST", body }),
+    updateItem: (
+      id: string,
+      lineId: string,
+      body: {
+        qty?: number;
+        priceMinor?: number;
+        discountMinor?: number;
+        discountPercent?: number;
+        promoCode?: string;
+      },
+    ) =>
       request<Sale>(`/api/sales/drafts/${id}/items/${lineId}`, {
         method: "PATCH",
         body,

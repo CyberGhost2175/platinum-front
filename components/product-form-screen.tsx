@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { Icon } from "@/components/icon";
 import { Notice, PageLoading } from "@/components/notice";
+import { SearchSelect } from "@/components/search-select";
 import { useToast } from "@/components/toast";
 import { api, errorMessage } from "@/lib/api";
 import { GOLD_TONE_LABEL, ITEM_CATEGORY_LABEL, METAL_LABEL } from "@/lib/labels";
@@ -19,6 +20,12 @@ const TONE_SWATCH: Record<GoldTone, string> = {
   red: "#c9896a",
 };
 
+function optionalMoney(raw: FormDataEntryValue | null, clearable: boolean) {
+  const value = String(raw ?? "").trim().replace(/\s/g, "").replace(",", ".");
+  if (!value) return clearable ? null : undefined;
+  return value;
+}
+
 export function ProductFormScreen({ productId }: { productId?: string }) {
   const router = useRouter();
   const toast = useToast();
@@ -28,6 +35,8 @@ export function ProductFormScreen({ productId }: { productId?: string }) {
   const [error, setError] = useState<string | null>(null);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [product, setProduct] = useState<ProductWithStock | null>(null);
+  const [supplierId, setSupplierId] = useState("");
+  const [supplierError, setSupplierError] = useState(false);
   const [metal, setMetal] = useState<MetalCategory>("gold");
   const [tone, setTone] = useState<GoldTone>("yellow");
 
@@ -43,6 +52,7 @@ export function ProductFormScreen({ productId }: { productId?: string }) {
         setSuppliers(list);
         if (item) {
           setProduct(item);
+          setSupplierId(item.supplierId);
           setMetal(item.metalCategory);
           setTone(item.goldTone ?? "yellow");
         }
@@ -63,6 +73,13 @@ export function ProductFormScreen({ productId }: { productId?: string }) {
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!supplierId) {
+      setSupplierError(true);
+      const message = "Выберите поставщика";
+      setError(message);
+      toast.error(message);
+      return;
+    }
     const form = new FormData(event.currentTarget);
     const sku = String(form.get("sku") || "").trim();
     const body = {
@@ -72,9 +89,9 @@ export function ProductFormScreen({ productId }: { productId?: string }) {
       metalCategory: metal,
       goldTone: metal === "gold" ? tone : editing ? null : undefined,
       itemCategory: String(form.get("itemCategory")) as ItemCategory,
-      supplierId: String(form.get("supplierId")),
-      price: String(form.get("price") || "") || undefined,
-      costPrice: String(form.get("costPrice") || "") || undefined,
+      supplierId,
+      price: optionalMoney(form.get("price"), editing),
+      costPrice: optionalMoney(form.get("costPrice"), editing),
     };
     setBusy(true);
     setError(null);
@@ -111,9 +128,9 @@ export function ProductFormScreen({ productId }: { productId?: string }) {
         {loading ? <PageLoading /> : (
           <form
             onSubmit={onSubmit}
-            className="relative mx-auto max-w-3xl overflow-hidden rounded-lg border border-border bg-surface p-8"
+            className="relative mx-auto max-w-3xl overflow-visible rounded-lg border border-border bg-surface p-8"
           >
-            <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-transparent via-gold to-transparent" />
+            <div className="absolute inset-x-0 top-0 h-0.5 rounded-t-lg bg-gradient-to-r from-transparent via-gold to-transparent" />
             <div className="mb-8 flex items-start gap-4">
               <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gold/15 text-gold">
                 <Icon name={editing ? "edit" : "diamond"} size={24} />
@@ -125,7 +142,7 @@ export function ProductFormScreen({ productId }: { productId?: string }) {
                 <p className="mt-1 text-body text-secondary">
                   {editing
                     ? "Обновите карточку номенклатуры. Цвет золота нужен только для золотых изделий."
-                    : "Заполните карточку товара. Артикул можно не указывать — система выдаст его сама."}
+                    : "Заполните карточку товара. Артикул, цену и себестоимость можно не указывать."}
                 </p>
               </div>
             </div>
@@ -203,25 +220,56 @@ export function ProductFormScreen({ productId }: { productId?: string }) {
               )}
             </section>
 
-            <section className="mb-8 grid gap-4 md:grid-cols-3">
-              <h2 className="text-h2 md:col-span-3">Поставщик и цена</h2>
-              <label className="flex flex-col gap-1.5 md:col-span-3">
+            <section className="mb-8 grid gap-4 md:grid-cols-2">
+              <h2 className="text-h2 md:col-span-2">Поставщик и цена</h2>
+              <label className="flex flex-col gap-1.5 md:col-span-2">
                 <span className="label-caps text-secondary">Поставщик</span>
-                <select name="supplierId" required defaultValue={product?.supplierId ?? ""} className={fieldClass}>
-                  <option value="">Выберите поставщика</option>
-                  {suppliers.map((supplier) => (
-                    <option key={supplier.id} value={supplier.id}>{supplier.name}</option>
-                  ))}
-                </select>
+                <SearchSelect
+                  options={suppliers.map((supplier) => ({
+                    value: supplier.id,
+                    label: supplier.name,
+                    hint: [supplier.phone, supplier.email].filter(Boolean).join(" · ") || null,
+                  }))}
+                  value={supplierId}
+                  onChange={(id) => {
+                    setSupplierId(id);
+                    setSupplierError(false);
+                  }}
+                  placeholder="Найдите поставщика по названию или телефону"
+                  searchPlaceholder="Начните вводить название…"
+                  noneText="Сначала добавьте поставщика в настройках"
+                  invalid={supplierError}
+                />
               </label>
               <label className="flex flex-col gap-1.5">
-                <span className="label-caps text-secondary">Цена, тг</span>
-                <input name="price" defaultValue={product?.price ?? ""} placeholder="45990.00" className={fieldClass} />
+                <span className="flex items-center justify-between gap-2">
+                  <span className="label-caps text-secondary">Цена, тг</span>
+                  <span className="text-[11px] text-secondary">необязательно</span>
+                </span>
+                <input
+                  name="price"
+                  inputMode="decimal"
+                  defaultValue={product?.price ?? ""}
+                  placeholder="Можно указать позже"
+                  className={fieldClass}
+                />
               </label>
-              <label className="flex flex-col gap-1.5 md:col-span-2">
-                <span className="label-caps text-secondary">Себестоимость, тг</span>
-                <input name="costPrice" defaultValue={product?.costPrice ?? ""} placeholder="22100.00" className={fieldClass} />
+              <label className="flex flex-col gap-1.5">
+                <span className="flex items-center justify-between gap-2">
+                  <span className="label-caps text-secondary">Себестоимость, тг</span>
+                  <span className="text-[11px] text-secondary">необязательно</span>
+                </span>
+                <input
+                  name="costPrice"
+                  inputMode="decimal"
+                  defaultValue={product?.costPrice ?? ""}
+                  placeholder="Можно указать позже"
+                  className={fieldClass}
+                />
               </label>
+              <p className="text-[12px] text-secondary md:col-span-2">
+                Если цену не заполнить, её можно будет поставить прямо в кассе при продаже.
+              </p>
             </section>
 
             <div className="flex flex-wrap gap-3">

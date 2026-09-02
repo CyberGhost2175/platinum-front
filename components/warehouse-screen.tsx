@@ -9,6 +9,7 @@ import { Filter } from "@/components/filter-select";
 import { Icon } from "@/components/icon";
 import { Notice, PageLoading } from "@/components/notice";
 import { useToast } from "@/components/toast";
+import { WarehouseReport } from "@/components/warehouse-report";
 import { api, errorMessage } from "@/lib/api";
 import { formatRubles } from "@/lib/format";
 import { ITEM_CATEGORY_LABEL, METAL_LABEL, metalLine } from "@/lib/labels";
@@ -32,6 +33,11 @@ const SORT_OPTIONS = [
   { value: "price:ASC", label: "Цена ↑" },
 ];
 
+const TABS = [
+  { id: "goods", label: "Товары", icon: "inventory_2" },
+  { id: "report", label: "Отчётность", icon: "monitoring" },
+] as const;
+
 export function WarehouseScreen() {
   const { user } = useAuth();
   const toast = useToast();
@@ -49,6 +55,7 @@ export function WarehouseScreen() {
   const [metal, setMetal] = useState<MetalCategory | "">("");
   const [supplierId, setSupplierId] = useState("");
   const [sort, setSort] = useState("createdAt:DESC");
+  const [tab, setTab] = useState<(typeof TABS)[number]["id"]>("goods");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -87,8 +94,9 @@ export function WarehouseScreen() {
   }, [page, debounced, category, metal, supplierId, sort]);
 
   useEffect(() => {
+    if (tab !== "goods") return;
     void load();
-  }, [load]);
+  }, [load, tab]);
 
   async function onDelete(item: ProductWithStock) {
     const ok = await confirm({
@@ -110,18 +118,26 @@ export function WarehouseScreen() {
 
   return (
     <AppShell
-      searchPlaceholder="Поиск: артикул, имя, грамм, поставщик, металл, категория…"
+      searchPlaceholder={
+        tab === "report"
+          ? "Отчёт: артикул, поставщик, металл, категория…"
+          : "Поиск: артикул, имя, грамм, поставщик, металл, категория…"
+      }
       searchValue={query}
       onSearchChange={(value) => { setPage(1); setQuery(value); }}
     >
       <div className="flex flex-col p-page">
-        {error ? <Notice onClose={() => setError(null)}>{error}</Notice> : null}
-        <div className="mb-6 flex items-end justify-between gap-4">
+        {error && tab === "goods" ? <Notice onClose={() => setError(null)}>{error}</Notice> : null}
+        <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
           <div>
             <h2 className="text-h1 text-on-surface">Склад</h2>
-            <p className="mt-1 text-body text-secondary">Товары: добавление, изменение и удаление</p>
+            <p className="mt-1 text-body text-secondary">
+              {tab === "report"
+                ? "Сколько металла осталось, от каких поставщиков и каких изделий больше"
+                : "Товары: добавление, изменение и удаление"}
+            </p>
           </div>
-          {canWrite ? (
+          {canWrite && tab === "goods" ? (
             <Link
               href="/sklad/new"
               className="flex items-center gap-2 rounded bg-gold px-4 py-2 label-caps text-on-primary transition-colors hover:bg-surface-tint"
@@ -131,6 +147,30 @@ export function WarehouseScreen() {
             </Link>
           ) : null}
         </div>
+        <div className="mb-4 flex items-center gap-2">
+          {TABS.map((item) => {
+            const active = tab === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setTab(item.id)}
+                className={
+                  active
+                    ? "flex items-center gap-2 rounded border border-gold bg-surface-low px-4 py-2 label-caps text-on-surface"
+                    : "flex items-center gap-2 rounded border border-border bg-background px-4 py-2 label-caps text-secondary hover:border-gold hover:text-gold"
+                }
+              >
+                <Icon name={item.icon} size={16} />
+                {item.label}
+              </button>
+            );
+          })}
+        </div>
+        {tab === "report" ? (
+          <WarehouseReport search={debounced} />
+        ) : (
+          <>
         <div className="mb-4 flex flex-wrap items-end gap-4 rounded border border-border bg-surface-lowest p-4">
           <Filter
             label="Категория"
@@ -249,6 +289,8 @@ export function WarehouseScreen() {
               </div>
             </div>
           </div>
+        )}
+          </>
         )}
       </div>
     </AppShell>
