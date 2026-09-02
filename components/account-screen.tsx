@@ -69,7 +69,8 @@ export function AccountScreen() {
 
   async function onChangePassword(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formEl = event.currentTarget;
+    const form = new FormData(formEl);
     const password = String(form.get("password") || "");
     const repeat = String(form.get("confirm") || "");
     if (password !== repeat) {
@@ -89,7 +90,7 @@ export function AccountScreen() {
     setError(null);
     try {
       await api.auth.changePassword(password);
-      event.currentTarget.reset();
+      formEl.reset();
       toast.success("Пароль изменён. Войдите снова.");
       await logout();
       router.replace("/");

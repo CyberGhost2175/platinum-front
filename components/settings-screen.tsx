@@ -87,7 +87,8 @@ function UsersPanel() {
 
   async function onCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formEl = event.currentTarget;
+    const form = new FormData(formEl);
     try {
       await api.users.create({
         email: String(form.get("email")),
@@ -98,7 +99,7 @@ function UsersPanel() {
         phone: String(form.get("phone") || "") || undefined,
         locationId: String(form.get("locationId") || "") || undefined,
       });
-      event.currentTarget.reset();
+      formEl.reset();
       toast.success("Сотрудник создан");
       await load();
     } catch (err) {
@@ -304,14 +305,15 @@ function SuppliersPanel() {
 
   async function onCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formEl = event.currentTarget;
+    const form = new FormData(formEl);
     try {
       await api.suppliers.create({
         name: String(form.get("name")),
         phone: String(form.get("phone") || "") || undefined,
         email: String(form.get("email") || "") || undefined,
       });
-      event.currentTarget.reset();
+      formEl.reset();
       toast.success("Поставщик создан");
       await load();
     } catch (err) {
@@ -445,7 +447,8 @@ function LocationsPanel() {
 
   async function onCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formEl = event.currentTarget;
+    const form = new FormData(formEl);
     const parentId = String(form.get("parentId") || "");
     try {
       await api.locations.create({
@@ -453,7 +456,7 @@ function LocationsPanel() {
         type: String(form.get("type")) as Location["type"],
         parentId: parentId || undefined,
       });
-      event.currentTarget.reset();
+      formEl.reset();
       toast.success("Точка создана");
       await load();
     } catch (err) {
