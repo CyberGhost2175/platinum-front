@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { Icon } from "@/components/icon";
@@ -39,6 +39,7 @@ export function ProductFormScreen({ productId }: { productId?: string }) {
   const [supplierError, setSupplierError] = useState(false);
   const [metal, setMetal] = useState<MetalCategory>("gold");
   const [tone, setTone] = useState<GoldTone>("yellow");
+  const submitting = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -73,6 +74,7 @@ export function ProductFormScreen({ productId }: { productId?: string }) {
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (submitting.current || busy) return;
     if (!supplierId) {
       setSupplierError(true);
       const message = "Выберите поставщика";
@@ -80,19 +82,21 @@ export function ProductFormScreen({ productId }: { productId?: string }) {
       toast.error(message);
       return;
     }
-    const form = new FormData(event.currentTarget);
-    const sku = String(form.get("sku") || "").trim();
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    const sku = String(data.get("sku") || "").trim();
     const body = {
       sku: sku || undefined,
-      name: String(form.get("name")),
-      weight: String(form.get("weight")),
+      name: String(data.get("name")),
+      weight: String(data.get("weight") || "").trim().replace(",", "."),
       metalCategory: metal,
       goldTone: metal === "gold" ? tone : editing ? null : undefined,
-      itemCategory: String(form.get("itemCategory")) as ItemCategory,
+      itemCategory: String(data.get("itemCategory")) as ItemCategory,
       supplierId,
-      price: optionalMoney(form.get("price"), editing),
-      costPrice: optionalMoney(form.get("costPrice"), editing),
+      price: optionalMoney(data.get("price"), editing),
+      costPrice: optionalMoney(data.get("costPrice"), editing),
     };
+    submitting.current = true;
     setBusy(true);
     setError(null);
     try {
@@ -103,13 +107,14 @@ export function ProductFormScreen({ productId }: { productId?: string }) {
         await api.products.create(body);
         toast.success("Товар добавлен");
       }
-      router.push("/sklad");
+      router.replace("/sklad");
+      router.refresh();
     } catch (err) {
+      submitting.current = false;
+      setBusy(false);
       const message = errorMessage(err);
       setError(message);
       toast.error(message);
-    } finally {
-      setBusy(false);
     }
   }
 
